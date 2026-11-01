@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Adaptive Replacement Cache (ARC) vs LRU & FIFO interactive operating systems simulator.">
+    <title>ARC Page Replacement Simulator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Chart.js for comparative performance charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Notification / Error Banner -->
+        <div id="toast-banner" class="toast-banner hidden" role="alert">
+            <span id="toast-message"></span>
+            <button id="toast-close" class="toast-close" aria-label="Close message">&times;</button>
+        </div>
+
+        <!-- Section A: Top Header -->
+        <header class="app-header">
+            <div class="header-brand">
+                <div class="brand-badge">OS KERNEL SIM</div>
+                <div>
+                    <h1>ARC Page Replacement Simulator</h1>
+                    <p class="header-desc">Adaptive Replacement Cache (FAST '03 &bull; Megiddo & Modha) vs LRU & FIFO</p>
+                </div>
+            </div>
+            <div class="header-meta">
+                <span class="paper-tag">Self-Tuning Dual-List Cache</span>
+                <div id="connection-status" class="status-indicator checking">
+                    <span class="dot"></span> <span id="status-text">Checking backend...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Dashboard Grid -->
+        <main class="dashboard-grid">
+            <!-- Section B: Simulation Configuration -->
+            <section class="panel config-panel">
+                <div class="panel-header">
+                    <h2>Simulation Setup</h2>
+                    <span class="badge-sub">Step 1: Configure</span>
+                </div>
+
+                <form id="config-form" onsubmit="return false;">
+                    <!-- Algorithm Selection -->
+                    <div class="form-group">
+                        <label for="algorithm-select">Target Algorithm:</label>
+                        <select id="algorithm-select">
+                            <option value="ARC" selected>ARC (Adaptive Replacement Cache)</option>
+                            <option value="LRU">LRU (Least Recently Used)</option>
+                            <option value="FIFO">FIFO (First-In, First-Out)</option>
+                        </select>
+                        <span class="field-hint">Select algorithm for single-run step visualization.</span>
+                    </div>
+
+                    <!-- Cache Capacity -->
+                    <div class="form-group">
+                        <label for="cache-capacity">Cache Capacity (c):</label>
+                        <input type="number" id="cache-capacity" value="4" min="1" max="64" required>
+                        <span class="field-hint">Total resident page slots: |T1| + |T2| &le; c</span>
+                    </div>
+
+                    <!-- Workload Pattern Selector -->
+                    <div class="form-group">
+                        <label for="workload-type">Workload Strategy:</label>
+                        <select id="workload-type">
+                            <option value="custom">Custom Reference Sequence</option>
+                            <option value="sequential">Sequential Scan (Looping Scan)</option>
+                            <option value="random">Uniform Random</option>
+                            <option value="repeated_locality" selected>Zipfian / Skewed Locality (80-20)</option>
+                            <option value="looping">Cyclic Loop (c + 1 Thrashing)</option>
+                        </select>
+                    </div>
+
+                    <!-- Workload Parameter Fields -->
+                    <div id="workload-params-container" class="workload-params">
+                        <div class="param-row">
+                            <div class="form-group flex-1">
+                                <label for="workload-length">Length (N):</label>
+                                <input type="number" id="workload-length" value="16" min="1" max="256">
+                            </div>
+                            <div class="form-group flex-1" id="group-num-pages">
+                                <label for="workload-pages-count">Distinct Pages:</label>
+                                <input type="number" id="workload-pages-count" value="8" min="1" max="64">
+                            </div>
+                        </div>
+
+                        <!-- Specific parameters for repeated locality -->
+                        <div id="locality-params" class="param-row">
+                            <div class="form-group flex-1">
+                                <label for="hot-pages-count">Hot Pages:</label>
+                                <input type="number" id="hot-pages-count" value="2" min="1" max="16">
+                            </div>
+                            <div class="form-group flex-1">
+                                <label for="hot-prob">Hot Probability:</label>
+                                <input type="number" id="hot-prob" value="0.8" min="0.0" max="1.0" step="0.05">
+                            </div>
+                        </div>
+
+                        <!-- Specific parameters for looping -->
+                        <div id="looping-params" class="param-row hidden">
+                            <div class="form-group flex-1">
+                                <label for="loop-size">Loop Size:</label>
+                                <input type="number" id="loop-size" value="5" min="1" max="32">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Reference String Input -->
+                    <div class="form-group">
+                        <div class="label-with-action">
+                            <label for="reference-string-input">Page Reference String:</label>
+                            <button type="button" id="btn-generate-workload" class="btn-text">
+                                &#9881; Generate Workload
+                            </button>
+                        </div>
+                        <input type="text" id="reference-string-input" 
+                               value="1, 2, 3, 1, 2, 3, 4, 5, 6, 2, 3" 
+                               placeholder="e.g. 1, 2, 3, 1, 4, 1 or space-separated">
+                        <span class="field-hint">Comma or space-separated page identifiers.</span>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="action-buttons">
+                        <button type="button" id="btn-start-simulation" class="btn btn-primary full-width">
+                            &#9654; Start Simulation
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Section C: Simulation Visualizer Stage -->
+            <section class="panel visualizer-panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 id="visualizer-heading">ARC Cache Memory State</h2>
+                        <span class="badge-sub" id="current-algorithm-badge">Algorithm: ARC</span>
+                    </div>
+                    <!-- Playback Controls -->
+                    <div class="playback-toolbar">
+                        <button id="btn-step-prev" class="btn btn-icon" title="Previous Step" disabled>&#9198;</button>
+                        <button id="btn-play-pause" class="btn btn-play" title="Play / Pause" disabled>&#9654; Play</button>
+                        <button id="btn-step-next" class="btn btn-icon" title="Next Step" disabled>&#9197;</button>
+                        <button id="btn-reset" class="btn btn-icon" title="Reset to Start" disabled>&#8634;</button>
+                        <div class="speed-control">
+                            <label for="speed-slider">Speed:</label>
+                            <input type="range" id="speed-slider" min="1" max="5" value="3" title="Adjust playback speed">
+                            <span id="speed-label" class="speed-label">1x</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Current Step Action Banner -->
+                <div class="step-banner" id="step-banner">
+                    <div class="step-badge" id="step-number-badge">Step 0 / 0</div>
+                    <div class="step-page-req">
+                        <span>Requested Page:</span>
+                        <span class="page-token highlight" id="current-page-display">-</span>
+                    </div>
+                    <div class="step-outcome">
+                        <span class="status-pill status-ready" id="step-outcome-pill">READY</span>
+                    </div>
+                    <div class="step-movement" id="step-movement-desc">Click "Start Simulation" to load the workload.</div>
+                </div>
+
+                <!-- ARC Specific Parameter p Track (Visible only when ARC is selected) -->
+                <div id="arc-parameter-container" class="parameter-section">
+                    <div class="p-header">
+                        <div class="p-title">
+                            <span>Adaptive Target Parameter:</span>
+                            <strong class="mono-val">p = <span id="p-display-val">0.00</span></strong>
+                            <span class="p-ratio-text">(Target Recency Size: <span id="p-target-int">0</span> / Capacity: <span id="p-capacity">4</span>)</span>
+                        </div>
+                        <div class="p-legends">
+                            <span class="legend-t1"><span class="legend-box t1-box"></span> T1 Target: [0, p]</span>
+                            <span class="legend-t2"><span class="legend-box t2-box"></span> T2 Target: [p, c]</span>
+                        </div>
+                    </div>
+                    <div class="p-track-outer">
+                        <div id="p-track-fill" class="p-track-fill" style="width: 0%;"></div>
+                        <div id="p-track-marker" class="p-track-marker" style="left: 0%;">
+                            <span class="marker-flag">p=<span id="marker-p-val">0</span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Memory Lists Container (ARC 4 lists or LRU/FIFO list) -->
+                <div id="memory-lists-container" class="memory-lists-grid">
+                    <!-- T1 List -->
+                    <div class="list-card active-list" id="card-t1">
+                        <div class="list-card-header">
+                            <div>
+                                <span class="list-name">T1: Recent Resident</span>
+                                <span class="list-sub">Top recency (pages seen once)</span>
+                            </div>
+                            <span class="list-count" id="count-t1">0</span>
+                        </div>
+                        <div class="list-order-labels">
+                            <span>[Top: MRU]</span>
+                            <span>[Bottom: LRU]</span>
+                        </div>
+                        <div id="list-t1" class="page-items-container">
+                            <div class="empty-list-placeholder">Empty</div>
+                        </div>
+                    </div>
+
+                    <!-- T2 List -->
+                    <div class="list-card active-list" id="card-t2">
+                        <div class="list-card-header">
+                            <div>
+                                <span class="list-name">T2: Frequent Resident</span>
+                                <span class="list-sub">Top frequency (pages seen &ge; 2x)</span>
+                            </div>
+                            <span class="list-count" id="count-t2">0</span>
+                        </div>
+                        <div class="list-order-labels">
+                            <span>[Top: MRU]</span>
+                            <span>[Bottom: LRU]</span>
+                        </div>
+                        <div id="list-t2" class="page-items-container">
+                            <div class="empty-list-placeholder">Empty</div>
+                        </div>
+                    </div>
+
+                    <!-- B1 Ghost List -->
+                    <div class="list-card ghost-list" id="card-b1">
+                        <div class="list-card-header">
+                            <div>
+                                <span class="list-name">B1: Recency Ghost</span>
+                                <span class="list-sub">History of T1 evictions</span>
+                            </div>
+                            <span class="list-count" id="count-b1">0</span>
+                        </div>
+                        <div class="list-order-labels">
+                            <span>[Top: Recent Ghost]</span>
+                            <span>[Bottom: Oldest Ghost]</span>
+                        </div>
+                        <div id="list-b1" class="page-items-container">
+                            <div class="empty-list-placeholder">Empty</div>
+                        </div>
+                    </div>
+
+                    <!-- B2 Ghost List -->
+                    <div class="list-card ghost-list" id="card-b2">
+                        <div class="list-card-header">
+                            <div>
+                                <span class="list-name">B2: Frequency Ghost</span>
+                                <span class="list-sub">History of T2 evictions</span>
+                            </div>
+                            <span class="list-count" id="count-b2">0</span>
+                        </div>
+                        <div class="list-order-labels">
+                            <span>[Top: Recent Ghost]</span>
+                            <span>[Bottom: Oldest Ghost]</span>
+                        </div>
+                        <div id="list-b2" class="page-items-container">
+                            <div class="empty-list-placeholder">Empty</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Single Cache Container for LRU / FIFO (Hidden during ARC) -->
+                <div id="single-cache-container" class="single-cache-card hidden">
+                    <div class="list-card-header">
+                        <div>
+                            <span class="list-name" id="single-cache-title">Resident Memory Pages</span>
+                            <span class="list-sub" id="single-cache-subtitle">Ordered from oldest/LRU to newest/MRU</span>
+                        </div>
+                        <span class="list-count" id="count-single-cache">0 / 0</span>
+                    </div>
+                    <div class="list-order-labels">
+                        <span id="single-cache-left-label">[Most Recently Used (MRU)]</span>
+                        <span id="single-cache-right-label">[Least Recently Used (LRU)]</span>
+                    </div>
+                    <div id="list-single-cache" class="page-items-container horizontal">
+                        <div class="empty-list-placeholder">Empty</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section D: Metrics Dashboard -->
+            <section class="panel metrics-panel">
+                <div class="panel-header">
+                    <h2>Live Metrics</h2>
+                    <span class="badge-sub">Cumulative</span>
+                </div>
+
+                <div class="metrics-grid">
+                    <div class="stat-card">
+                        <span class="stat-label">Total Requests</span>
+                        <span class="stat-val" id="stat-requests">0</span>
+                        <span class="stat-hint">Processed references</span>
+                    </div>
+                    <div class="stat-card highlight-hit">
+                        <span class="stat-label">Cache Hits</span>
+                        <span class="stat-val" id="stat-hits">0</span>
+                        <span class="stat-hint" id="stat-hit-ratio">Hit Ratio: 0.00%</span>
+                    </div>
+                    <div class="stat-card highlight-miss">
+                        <span class="stat-label">Page Faults (Misses)</span>
+                        <span class="stat-val" id="stat-misses">0</span>
+                        <span class="stat-hint" id="stat-miss-ratio">Fault Rate: 0.00%</span>
+                    </div>
+                    <div class="stat-card highlight-repl">
+                        <span class="stat-label">Replacements</span>
+                        <span class="stat-val" id="stat-replacements">0</span>
+                        <span class="stat-hint">Resident evictions</span>
+                    </div>
+                </div>
+
+                <!-- Progress Meter -->
+                <div class="progress-section">
+                    <div class="progress-labels">
+                        <span>Hit vs Fault Breakdown:</span>
+                        <span id="progress-percent">0% Hits</span>
+                    </div>
+                    <div class="ratio-bar">
+                        <div id="ratio-bar-hits" class="ratio-fill-hits" style="width: 0%;"></div>
+                        <div id="ratio-bar-misses" class="ratio-fill-misses" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <div class="timing-info">
+                    <span>Algorithm Execution Time:</span>
+                    <strong id="stat-exec-time">0.000 ms</strong>
+                </div>
+            </section>
+        </main>
+
+        <!-- Section E: Multi-Algorithm Comparative Analysis -->
+        <section class="panel comparison-section">
+            <div class="panel-header">
+                <div>
+                    <h2>Comparative Analysis: ARC vs LRU vs FIFO</h2>
+                    <p class="panel-subtitle">Benchmark all three algorithms simultaneously on the identical workload and capacity.</p>
+                </div>
+                <button type="button" id="btn-run-comparison" class="btn btn-secondary">
+                    &#9878; Run 3-Way Comparison
+                </button>
+            </div>
+
+            <!-- Comparison Winner Banner -->
+            <div id="comparison-winner-banner" class="winner-banner hidden">
+                <div class="winner-badge" id="winner-badge-icon">&#127942; BEST PERFORMER</div>
+                <div class="winner-content">
+                    <h3 id="winner-headline">Evaluating...</h3>
+                    <p id="winner-detail">Page-fault-based winner determination will appear here.</p>
+                </div>
+            </div>
+
+            <!-- Side-by-Side Comparison Grid -->
+            <div class="comparison-results-grid">
+                <!-- ARC Card -->
+                <div class="algo-comp-card" id="card-comp-arc">
+                    <div class="comp-card-head arc-theme">
+                        <h3>ARC</h3>
+                        <span class="comp-badge">Adaptive Cache</span>
+                    </div>
+                    <div class="comp-metric-row">
+                        <span>Page Faults:</span>
+                        <strong class="fault-val" id="comp-arc-faults">-</strong>
+                    </div>
+                    <div class="comp-metric-row">
+                        <span>Hit Ratio:</span>
+                        <strong id="comp-arc-hit-ratio">-</strong>
+                    </div>
+                    <div class="comp-metric-row">
+                        <span>Hits:</span>
+                        <span id="comp-arc-hits">-</span>
+                    </div>
+                    <div class="comp-metric-row">
+                        <span>Replacements:</span>
+                        <span id="comp-arc-repl">-</span>
+                    </div>
+                    <div class="comp-metric-row">
+                        <span>Exec Time:</span>
+                        <span id="comp-arc-time">-</span>
+                    </div>
+                </div>
+
+                <!-- LRU Card -->
+                <div class="algo-comp-card" id="card-comp-lru">
+                    <div class="comp-card-head lru-theme">
+                        <h3>LRU</h3>
+                        <span class="comp-badge">Recency Baseline</span>
+                    </div>
+                    <div class="comp-metric-row">
+                        <span>Page Faults:</span>
+                        <strong class="fault-val" id="comp-lru-faults">-</strong>
+                    </div>
+                    <div class="comp-metric-row">
+                        <span>Hit Ratio:</span>
+                        <strong id="comp-lru-hit-ratio">-</strong>
+                    </div>
+                    <div class="comp-metric-row">
+                        <span>Hits:</span>
+                        <span id="comp-lru-hits">-</span>
+                    </div>
+                    <div class="comp-metric-row">
+                        <span>Replacements:</span>
+                        <span id="comp-lru-repl">-</span>
+                    </div>
+                    <div class="comp-metric-row">
+                        <span>Exec Time:</span>
+                        <span id="comp-lru-time">-</span>
+                    </div>
+                </div>
+
+                <!-- FIFO Card -->
+                <div class="algo-comp-card" id="card-comp-fifo">
+                    <div class="comp-card-head fifo-theme">
+                        <h3>FIFO</h3>
+                        <span class="comp-badge">Queue Baseline</span>
+                    </div>
+                    <div class="comp-metric-row">
+                        <span>Page Faults:</span>
+                        <strong class="fault-val" id="comp-fifo-faults">-</strong>
+                    </div>
+                    <div class="comp-metric-row">
+                        <span>Hit Ratio:</span>
+                        <strong id="comp-fifo-hit-ratio">-</strong>
+                    </div>
+                    <div class="comp-metric-row">
+                        <span>Hits:</span>
+                        <span id="comp-fifo-hits">-</span>
+                    </div>
+                    <div class="comp-metric-row">
+                        <span>Replacements:</span>
+                        <span id="comp-fifo-repl">-</span>
+                    </div>
+                    <div class="comp-metric-row">
+                        <span>Exec Time:</span>
+                        <span id="comp-fifo-time">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Grid -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h4>Page Faults & Hits Comparison (Fewer Faults is Better)</h4>
+                    <div class="chart-container">
+                        <canvas id="comparisonBarChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h4>Hit Ratio Comparison (%)</h4>
+                    <div class="chart-container">
+                        <canvas id="hitRatioBarChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section F: Educational & Theoretical Architecture Reference -->
+        <section class="panel explanation-section">
+            <div class="panel-header">
+                <h2>ARC Algorithm Theory & Architectural Reference</h2>
+                <span class="badge-sub">USENIX FAST 2003 Paper Reference</span>
+            </div>
+
+            <div class="explanation-grid">
+                <!-- Card 1: What is ARC -->
+                <div class="concept-card">
+                    <div class="concept-icon">&#9879;</div>
+                    <h3>1. What is ARC?</h3>
+                    <p>
+                        <strong>Adaptive Replacement Cache (ARC)</strong> dynamically balances recency and frequency
+                        in real time without manual tuning. Traditional LRU can be severely degraded by one-off sequential scans,
+                        while pure LFU accumulates stale "zombie" pages. ARC delivers the advantages of both.
+                    </p>
+                </div>
+
+                <!-- Card 2: Resident Lists T1 & T2 -->
+                <div class="concept-card">
+                    <div class="concept-icon">&#128190;</div>
+                    <h3>2. Resident Lists T1 & T2</h3>
+                    <p>
+                        Cache memory capacity <code>c</code> is split between two resident page lists:
+                    </p>
+                    <ul>
+                        <li><strong>T1 (Recency):</strong> Resident pages accessed only <em>once</em> recently.</li>
+                        <li><strong>T2 (Frequency):</strong> Resident pages accessed at least <em>twice</em> (high reuse).</li>
+                    </ul>
+                    <p class="card-formula">Invariant: |T1| + |T2| &le; c</p>
+                </div>
+
+                <!-- Card 3: Ghost Lists B1 & B2 -->
+                <div class="concept-card">
+                    <div class="concept-icon">&#128123;</div>
+                    <h3>3. Ghost Lists B1 & B2</h3>
+                    <p>
+                        Ghost caches store only <em>metadata</em> (page identifiers) without page contents:
+                    </p>
+                    <ul>
+                        <li><strong>B1:</strong> Remembers pages recently evicted from <code>T1</code>.</li>
+                        <li><strong>B2:</strong> Remembers pages recently evicted from <code>T2</code>.</li>
+                    </ul>
+                    <p>
+                        A hit in a ghost cache indicates that increasing the respective list's target size would have prevented a cache miss!
+                    </p>
+                </div>
+
+                <!-- Card 4: Adaptive Parameter p -->
+                <div class="concept-card">
+                    <div class="concept-icon">&#9881;</div>
+                    <h3>4. Adaptive Parameter p</h3>
+                    <p>
+                        Parameter <code>p &isin; [0, c]</code> represents the target size of recency cache <code>T1</code>.
+                    </p>
+                    <ul>
+                        <li><strong>B1 Hit (Needs Recency):</strong> Shifts <code>p</code> upwards by <code>&delta;1 = max(1, |B2|/|B1|)</code>.</li>
+                        <li><strong>B2 Hit (Needs Frequency):</strong> Shifts <code>p</code> downwards by <code>&delta;2 = max(1, |B1|/|B2|)</code>.</li>
+                    </ul>
+                    <p>
+                        When a sequential scan occurs, pages populate <code>T1</code> without polluting <code>T2</code>.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Algorithm Comparison Matrix -->
+            <div class="table-responsive">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Replacement Policy</th>
+                            <th>Primary Metric</th>
+                            <th>Scan Resistance</th>
+                            <th>Frequency Awareness</th>
+                            <th>Tuning Overhead</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="highlight-row">
+                            <td><strong>ARC (Adaptive Replacement Cache)</strong></td>
+                            <td>Dual Recency + Frequency with Ghost Memory</td>
+                            <td><span class="status-pill status-success">High (Auto-shields T2)</span></td>
+                            <td><span class="status-pill status-success">High (Tracks repeated hits)</span></td>
+                            <td><span class="status-pill status-success">None (Online Self-Tuning)</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>LRU (Least Recently Used)</strong></td>
+                            <td>Pure Recency</td>
+                            <td><span class="status-pill status-danger">Poor (Vulnerable to Scans)</span></td>
+                            <td><span class="status-pill status-warning">None (Equal weight for all hits)</span></td>
+                            <td><span class="status-pill status-success">None</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>FIFO (First-In, First-Out)</strong></td>
+                            <td>Pure Arrival Order</td>
+                            <td><span class="status-pill status-danger">Poor (Prone to Belady's Anomaly)</span></td>
+                            <td><span class="status-pill status-danger">None (Hits do not update order)</span></td>
+                            <td><span class="status-pill status-success">None</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <p>ARC Page Replacement Simulator &bull; Developed for Operating Systems Research &bull; Built with FastAPI & Chart.js</p>
+        </footer>
+    </div>
+
+    <!-- Application Script -->
+    <script src="js/app.js"></script>
+</body>
+</html>

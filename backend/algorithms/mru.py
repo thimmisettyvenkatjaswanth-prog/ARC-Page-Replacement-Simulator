@@ -9,7 +9,7 @@ where the most recently used page is least likely to be needed immediately.
 This module is completely independent of FastAPI and GUI frameworks.
 """
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 class MRUCache:
@@ -143,14 +143,40 @@ class MRUCache:
             "adapted_p": 0.0
         }
 
-    def select_victim(self, incoming_page: Any = None, process_context: Optional[int] = None) -> Any:
+    def select_victim(
+        self,
+        incoming_page: Any = None,
+        process_context: Optional[int] = None,
+        is_eligible_cb: Optional[Callable[[Any], bool]] = None
+    ) -> Any:
         """
         Identify the candidate victim page without mutating resident state.
-        Selects the Most Recently Used (MRU) page at the tail of the cache.
+        Selects the Most Recently Used (MRU) page at the tail of the cache that satisfies is_eligible_cb.
         """
         if not self.cache:
             return None
-        return next(reversed(self.cache))
+        if is_eligible_cb is None:
+            return next(reversed(self.cache))
+        for page in reversed(self.cache):
+            if is_eligible_cb(page):
+                return page
+        return None
+
+    def purge_pid(self, pid: int) -> int:
+        """
+        Purge all pages belonging to the specified PID from the cache.
+        Non-process keys without a .pid attribute are safely ignored.
+        
+        Args:
+            pid: Process ID whose pages should be purged.
+            
+        Returns:
+            Count of resident pages purged.
+        """
+        keys_to_purge = [k for k in self.cache if hasattr(k, "pid") and k.pid == pid]
+        for k in keys_to_purge:
+            del self.cache[k]
+        return len(keys_to_purge)
 
     def evict_victim(self, victim: Any) -> None:
         """Confirm and execute eviction of the specified victim page."""

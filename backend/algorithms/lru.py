@@ -5,7 +5,7 @@ Independent baseline implementation for comparison against ARC.
 This module is completely independent of FastAPI and GUI frameworks.
 """
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
 class LRUCache:
@@ -147,4 +147,40 @@ class LRUCache:
         self.hits = 0
         self.misses = 0
         self.replacements = 0
+
+    def select_victim(self, is_eligible_cb: Optional[Callable[[Any], bool]] = None) -> Optional[Any]:
+        """
+        Identify candidate victim page without mutating LRU cache state.
+        
+        Args:
+            is_eligible_cb: Optional predicate returning True if candidate page is eligible for eviction.
+            
+        Returns:
+            The selected victim page key, or None if cache is empty or no eligible page exists.
+        """
+        if not self.cache:
+            return None
+        if is_eligible_cb is None:
+            return next(iter(self.cache))
+        for page in self.cache:
+            if is_eligible_cb(page):
+                return page
+        return None
+
+    def purge_pid(self, pid: int) -> int:
+        """
+        Purge all pages belonging to the specified PID from the cache.
+        Non-process keys without a .pid attribute are safely ignored.
+        
+        Args:
+            pid: Process ID whose pages should be purged.
+            
+        Returns:
+            Count of resident pages purged.
+        """
+        keys_to_purge = [k for k in self.cache if hasattr(k, "pid") and k.pid == pid]
+        for k in keys_to_purge:
+            del self.cache[k]
+        return len(keys_to_purge)
+
 

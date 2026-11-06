@@ -9,7 +9,7 @@ Least Recently Used (LRU) among pages with equal frequency.
 This module is completely independent of FastAPI and GUI frameworks.
 """
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 class LFUCache:
@@ -166,19 +166,60 @@ class LFUCache:
             "adapted_p": 0.0
         }
 
-    def select_victim(self, incoming_page: Any = None, process_context: Optional[int] = None) -> Any:
+    def select_victim(
+        self,
+        incoming_page: Any = None,
+        process_context: Optional[int] = None,
+        is_eligible_cb: Optional[Callable[[Any], bool]] = None
+    ) -> Any:
         """
         Identify the candidate victim page without mutating resident state.
-        Selects the LRU page from the current minimum frequency bucket.
+        Selects the LRU page from the lowest frequency bucket containing an eligible candidate.
         """
         if not self.page_to_freq:
             return None
-        min_bucket = self.freq_to_pages.get(self.min_freq)
-        if not min_bucket:
-            # Fallback to finding minimum key if pointer desynchronized
+        if is_eligible_cb is None:
+            min_bucket = self.freq_to_pages.get(self.min_freq)
+            if not min_bucket:
+                # Fallback to finding minimum key if pointer desynchronized
+                self.min_freq = min(self.freq_to_pages.keys())
+                min_bucket = self.freq_to_pages[self.min_freq]
+            return next(iter(min_bucket))
+
+        # With eligibility callback, scan frequency buckets in ascending order
+        for freq in sorted(self.freq_to_pages.keys()):
+            bucket = self.freq_to_pages[freq]
+            for page in bucket:
+                if is_eligible_cb(page):
+                    return page
+        return None
+
+    def purge_pid(self, pid: int) -> int:
+        """
+        Purge all pages belonging to the specified PID from the cache.
+        Non-process keys without a .pid attribute are safely ignored.
+        
+        Args:
+            pid: Process ID whose pages should be purged.
+            
+        Returns:
+            Count of resident pages purged.
+        """
+        keys_to_purge = [k for k in self.page_to_freq if hasattr(k, "pid") and k.pid == pid]
+        for k in keys_to_purge:
+            freq = self.page_to_freq[k]
+            del self.page_to_freq[k]
+            if freq in self.freq_to_pages and k in self.freq_to_pages[freq]:
+                del self.freq_to_pages[freq][k]
+                if not self.freq_to_pages[freq]:
+                    del self.freq_to_pages[freq]
+
+        if self.freq_to_pages:
             self.min_freq = min(self.freq_to_pages.keys())
-            min_bucket = self.freq_to_pages[self.min_freq]
-        return next(iter(min_bucket))
+        else:
+            self.min_freq = 0
+
+        return len(keys_to_purge)
 
     def evict_victim(self, victim: Any) -> None:
         """Confirm and execute eviction of the specified victim page."""
